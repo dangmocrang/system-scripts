@@ -1,0 +1,106 @@
+import boto3
+from collections import Counter
+tmp = '''cc2.8xlarge	60.5 GB	32 vCPUs
+cg1.4xlarge	22.5 GB	16 vCPUs
+t2.nano	0.5 GB	1 vCPUs
+t2.micro	1.0 GB	1 vCPUs
+t2.small	2.0 GB	1 vCPUs
+t2.medium	4.0 GB	2 vCPUs
+t2.large	8.0 GB	2 vCPUs
+m4.large	8.0 GB	2 vCPUs
+m4.xlarge	16.0 GB	4 vCPUs
+m4.2xlarge	32.0 GB	8 vCPUs
+m4.4xlarge	64.0 GB	16 vCPUs
+m4.10xlarge	160.0 GB	40 vCPUs
+m4.16xlarge	256.0 GB	64 vCPUs
+c4.large	3.75 GB	2 vCPUs
+c4.xlarge	7.5 GB	4 vCPUs
+c4.2xlarge	15.0 GB	8 vCPUs
+c4.4xlarge	30.0 GB	16 vCPUs
+c4.8xlarge	60.0 GB	36 vCPUs
+p2.xlarge	61.0 GB	4 vCPUs
+p2.8xlarge	488.0 GB	32 vCPUs
+p2.16xlarge	732.0 GB	64 vCPUs
+g2.2xlarge	15.0 GB	8 vCPUs
+g2.8xlarge	60.0 GB	32 vCPUs
+x1.16xlarge	976.0 GB	64 vCPUs
+x1.32xlarge	1952.0 GB	128 vCPUs
+r3.large	15.25 GB	2 vCPUs
+r3.xlarge	30.5 GB	4 vCPUs
+r3.2xlarge	61.0 GB	8 vCPUs
+r3.4xlarge	122.0 GB	16 vCPUs
+r3.8xlarge	244.0 GB	32 vCPUs
+i2.xlarge	30.5 GB	4 vCPUs
+i2.2xlarge	61.0 GB	8 vCPUs
+i2.4xlarge	122.0 GB	16 vCPUs
+i2.8xlarge	244.0 GB	32 vCPUs
+d2.xlarge	30.5 GB	4 vCPUs
+d2.2xlarge	61.0 GB	8 vCPUs
+d2.4xlarge	122.0 GB	16 vCPUs
+d2.8xlarge	244.0 GB	36 vCPUs
+hi1.4xlarge	60.5 GB	16 vCPUs
+hs1.8xlarge	117.0 GB	16 vCPUs
+m3.medium	3.75 GB	1 vCPUs
+m3.large	7.5 GB	2 vCPUs
+m3.xlarge	15.0 GB	4 vCPUs
+m3.2xlarge	30.0 GB	8 vCPUs
+c3.large	3.75 GB	2 vCPUs
+c3.xlarge	7.5 GB	4 vCPUs
+c3.2xlarge	15.0 GB	8 vCPUs
+c3.4xlarge	30.0 GB	16 vCPUs
+c3.8xlarge	60.0 GB	32 vCPUs
+m1.small	1.7 GB	1 vCPUs
+m1.medium	3.75 GB	1 vCPUs
+m1.large	7.5 GB	2 vCPUs
+m1.xlarge	15.0 GB	4 vCPUs
+c1.medium	1.7 GB	2 vCPUs
+c1.xlarge	7.0 GB	8 vCPUs
+m2.xlarge	17.1 GB	2 vCPUs
+m2.2xlarge	34.2 GB	4 vCPUs
+m2.4xlarge	68.4 GB	8 vCPUs
+t1.micro	0.613 GB	1 vCPUs
+cr1.8xlarge	244.0 GB	32 vCPUs
+'''
+tmp = tmp.split('\n')
+tmp = [t for t in tmp if t]
+flavour = {}
+for t in tmp:
+    flavour[t.split('\t')[0]] = t.split('\t')[1:]
+
+reportFile = ''
+
+def main():
+    client = boto3.client('ec2')
+    instances = client.describe_instances()['Reservations']
+    possibleTags = ''
+    totalInstances = []
+    for instance in instances:
+        data = instance['Instances'][0]
+        instanceType = data['InstanceType']
+        instancevCPU = flavour[instanceType][1].split()[0]
+        instanceMem = flavour[instanceType][0].split()[0]
+        instanceEBS = data['BlockDeviceMappings']
+        volumeIDs = [ebs['Ebs']['VolumeId'] for ebs in instanceEBS]
+        volumes = client.describe_volumes(VolumeIds=volumeIDs)['Volumes']
+        ebsAllocated = 0
+        for vol in volumes:
+            ebsAllocated += int(vol['Size'])
+        instanceTags = sorted(data['Tags'])
+        tags = ''
+        tmp = ''
+        instanceName = 'Unknown'
+        for tag in instanceTags:
+            if tag['Key'] == 'Name':
+                instanceName = tag['Value']
+            else:
+                tags += ';%s' % (tag['Value'])
+                tmp += ';%s' % tag['Key']
+        if len(tmp) > len(possibleTags):
+            possibleTags = tmp
+        output = '%s;%s;%s;%s;%s%s' % (instanceName, instanceType, instancevCPU, instanceMem, ebsAllocated, tags)
+        totalInstances.append(output)
+    f = open(reportFile, 'w')
+    f.writelines('%s\n' % l for l in totalInstances)
+    f.close()
+    
+main()
